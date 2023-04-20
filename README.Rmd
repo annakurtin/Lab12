@@ -10,63 +10,108 @@ knitr::opts_chunk$set(echo = TRUE)
 ```
 
 ```{r eval=TRUE, message=FALSE, results='hide',warning=FALSE}
-#function to install and load required packages
-ipak <- function(pkg){
-  new.pkg <- pkg[!(pkg %in% installed.packages()[, "Package"])]
-  if (length(new.pkg)) 
-    install.packages(new.pkg, dependencies = TRUE)
-  sapply(pkg, require, character.only = TRUE)
-}
-
-
 packages <- c("unmarked", "reshape2", "dplyr", "ggplot2","AICcmodavg")
-
-#run function to install packages
-ipak(packages)
+# unmarked is the workhorse for what we're doing now 
+package.check <- lapply(
+  packages,
+  FUN = function(x) {
+    if (!require(x, character.only = TRUE)) {
+      install.packages(x, dependencies = TRUE)
+      library(x, character.only = TRUE)
+    }
+  }
+)
 ```
 
 
-Follow this link: [unmarked](https://cran.r-project.org/web/packages/unmarked/vignettes/unmarked.pdf) for package vignette
+Follow this link: [unmarked](https://cran.r-project.org/web/packages/unmarked/vignettes/unmarked.html) for package vignette 
+
+
+* there are many occupacy models that can be applied to types of occupancy data
+
+* on vignette: Royle-Nichols, occuRN, point count pcount, dynamic colonization/extinction models 
 
 
 
 ############################################################
 ## 1.0 Frog Data Set Warm Up
 
+
+Data from an audio survey of spring peepers.
+
 ```{r}
+# Pseudoacris crucifer
+# convert your dataframe to a UMF object for use in unmarked
 pcru <- csvToUMF(system.file("csv", "frog2001pcru.csv", package = "unmarked"),long = TRUE, type = "unmarkedFrameOccu")
+# UMF is an unmarked dataframe object
+# pay attention to whether you're bringing it in long format or wide format, here we're specifying long data
 head(pcru)
+# here we see that the surveys were done about a month apart
+# no spatial covariates - we're only looking at detection probability 
 summary(pcru)
 ```
 
 There are 130 sites: 
  - Maximum number of observations per site: 3 
  - Mean number of observations per site: 2.59 
- - Sites with at least one detection: 96 
+ - Sites with at least one detection: 96 (naive occupancy .74 if you assume detection probability is 1)
 
 ```{r}
 # Scale
+# just like in the GLM, we scale our covariates to put them in terms of standard deviations 
 obsCovs(pcru) <- scale(obsCovs(pcru))
 ```
 
 ### Fit occupancy models using occu function
 
 ```{r}
+# recording 1:30:00
 # model 1: p(.)psi(.)
+# the ~1 ~1 is for detection probability (1 constant detection, 1 is constant psi)
 ex_mod_p1 <- occu(~ 1 ~ 1, data = pcru)
-ex_mod_p1
+# this throws a warning that some observations were >1, this is because the data we put in was counts
+hist(pcru.y)
 
+# Take a look at the model
+ex_mod_p1
+# how to interpret our outputs: plug them into plogis
+occupancy <- plogis(2.95)
+# How many sites were truly occupied based o our model?
+occupied_sites <- 130*occupancy
+# How many did we miss?
+occupied_sites - 96
+
+# Convert detection probability
+detection_prob <- plogis(-.249)
+# This is .44, which means we saw frogs if they were present in 44% of the sites
+
+
+# Fit another model with minutes after sunset and temperature 
 # model 2: p(MinAfterSunset,Temperature)psi(.)
 ex_mod_p2 <- occu(~ MinAfterSunset + Temperature ~ 1, data = pcru)
+
 ex_mod_p2
+
+# Interpreting this model
+occupancy2 <- plogis(1.54)
+# our new estimate is .82
+# our new model says we only missed them at 11 sites
+# this relates to the covariate effects
+# Intercept is our average detection probability 
+detection_prob2 <- plogis(0.21)
+# we see from the intercepts that as temperature goes up and minutes after sunset goes up, our detection probability goes down 
 ```
+
 
 ### Visualize parameters
 
 Variables can be back-transformed to the unconstrained scale using `backTransform` (Standard errors are computed using the delta method.)
 
 ```{r}
+# back transform the variables to convert them out of standard error scale
+# back transform the state (occupancy probability) of the first model
 backTransform(ex_mod_p1, "state")
+# back transform the detection probability of the first model
 backTransform(ex_mod_p1, "det")
 
 
@@ -76,15 +121,26 @@ backTransform(ex_mod_p2, "state")
 Because the detection component was modeled with covariates, covariate coefficients must be specified to back-transform. Here, we request the probability of detection given a site is occupied and all covariates are set to 0.
 
 ```{r}
-backTransform(linearComb(ex_mod_p2, coefficients = c(0, 0, -1), type = "det"))
+# back transform from model 2
+# say use 1 for intercept and use zero for the coefficients (these are in terms of standard error)
+backTransform(linearComb(ex_mod_p2, coefficients = c(1, 0, 0), type = "det"))
+# this gives you detection estimate of mean value of minutes after sunset
+
+# hypothetical super cold temperature
+backTransform(linearComb(ex_mod_p2, coefficients = c(1, 0, -2), type = "det"))
+# hypothetical really hot temperature
+backTransform(linearComb(ex_mod_p2, coefficients = c(1, 0, 2), type = "det"))
+# this could relate to the fact that frogs aren't calling later in the season when temperature is higher
 ```
 
 Next, we remind ourselves of the data to create predictions for specific ranges of values
 
 ```{r}
+# to make a graphical representation of detection probability with a range of temperatures
 head(getData(ex_mod_p2))
 newData <- data.frame(MinAfterSunset = 0, Temperature = -2:2)
 head(newData)
+# predict detection and append it into the dataframe
 predict(ex_mod_p2, type = "det", newdata = newData, appendData = TRUE)
 predicted.data <- predict(ex_mod_p2, type = "det", newdata = newData, appendData = TRUE)
 ```
@@ -103,8 +159,10 @@ fit.mlist <-fitList(fits=list('p.psi' = ex_mod_p1,'pMinAfterSunset_Temp_psi' = e
 ```
 
 Then, display the comparison using the unmarked function "modSel"
+(Model selection function)
 ```{r}
 modSel(fit.mlist, nullmod = "p.psi")
+# this shows us that our model with minutes after sunset and temperature is better 
 ```
 
 The next two unmarked functions are for model averaging
@@ -112,9 +170,18 @@ The next two unmarked functions are for model averaging
 ### Model averaging basics
 
 ```{r}
-coef(fit.mlist)
+# look at our list of models
+fit.mlist
+# extract the coefficients from fitlist
+coef
+# extract the SE
 SE(fit.mlist)
-frogPsi_m2 <-predict(fit.mlist, type="state") # occupancy
+
+# call the command to predict from a list of model objects rather than just from one model 
+frogPsi_m2 <-unmarked::predict(fit.mlist, type="state") # specify state to show that we're looking at occupancy
+
+# take the mean of the occupancy for each site
+# this will be the same for each site because we don't have any covariates on psi
 mean(frogPsi_m2$Predicted)
 ```
 
@@ -131,11 +198,13 @@ We predicted 10.99 more sites would have frogs than detected.
 ### Detection Probability
 
 ```{r}
+# do the same thing but for detection probability
 frogP_m2 <-predict(fit.mlist, type="det") # detection probability
+# look at a histogram of the predicted detection probabilities
 hist(frogP_m2$Predicted)
 summary(frogP_m2)
 
-
+# a function to look at the fit of the statistics 
 fitstats <- function(fm) {
   observed <- getY(fm@data)
   expected <- fitted(fm)
@@ -148,20 +217,29 @@ fitstats <- function(fm) {
 }
 ```
 
+
 ### Test of model fit: parametric bootstrap 
 
 ```{r warning=FALSE}
 load("Data/elkforheb.RData") ##loads functions chisq and Nocc used in parboot statistics
 
+# parboot is a parametric bootstrap method for fitted occupancy models
+## bootstrapping: randomly subset your data with replacement 
+# kind of like an r squared - how well does your model fit the data that was fed into it?
+## run this for a chi squared statistic
 pcru.pb <- parboot(ex_mod_p2, statistics = chisq, nsim = 50)
 pcru.pb
 plot(pcru.pb)
+# our data (dashed line) is in the middle of the distribution showing that it fits well
 
-
+# now we're looking at the predicted vs naive data 
 pcru.pb <- parboot(ex_mod_p2, Nocc, nsim = 50)
 pcru.pb
 plot(pcru.pb)
 abline(v=96, col="red")
+# red: naive occupancy, dashed line what we estimate the occupancy, bars the distribution of estimated occupancy
+# nice way to visualize your model vs the naive data
+# shows that just with naive data we're missing a lot of sites
 
 ```
 
@@ -173,10 +251,18 @@ We will use the elk data loaded in the previous step `load("Data/elkforheb.RData
 ```{r}
 #load("Data/elkforheb.RData") 
 ls()
+# 3 objects within RData
+# y 
 str(ydata)
+#this shows us each day of camera trap data
+# species
 str(sp)
+# just one spp
+# covariates
 str(covar)
+# list of 78 covariates
 
+#plot 698 camera locations
 ggplot(covar, aes(easting, northing)) + geom_point()
 ```
 
@@ -189,6 +275,7 @@ ggplot(covar, aes(easting, northing)) + geom_point()
 
 ###  Scale numeric variables and set other variables to factors
 ```{r}
+# clean up data
 new_covar <- covar %>%
   mutate(northness = cos(aspect90m)) %>%
   mutate(eastness = sin(aspect90m)) %>%
@@ -198,21 +285,25 @@ new_covar <- covar %>%
   mutate_if(is.character, as.factor) %>%
   mutate_if(is.numeric, scale)
 
+# select covariates of interest
 sel_cov <- new_covar %>%
   dplyr::select('northness', 'eastness', 'slope' = 'slope90m', 'elev',
                 'elev2', 'd2road', 'tpi20', 'tpi100', 'tpi500', 'cc500', 'cc100', 'burns20','burns100', 'burns500', 'regen20', 'regen100', 'regen500', 'cuts20','cuts100', 'cuts500', 'NDVIAug500', 'NDVIAug20', 'NDVIJul500', 'NDVIJul100','NDVIJul20', 'NDVIAug100', 'dhicum20', 'dhicum100', 'dhicum500', 'dhimin20','dhimin100', 'dhimin500', 'dhiseas20', 'dhiseas100', 'dhiseas500', 'lure','protected2', 'protected3', 'trailtype',	'camera','ppltot', 'pplcat3a', 'pplcat3b', 'pplcat3c', 'pplcat5','motortot', 'motorcat3a', 'motorcat3b', 'motorcat3c', 'motorcat5','allhumantot', 'allhumancat3a', 'allhumancat3b', 'allhumancat3c','allhumancat5', 'pplcat2a', 'pplcat2b', 'pplcat2c', 'pplcat2d', 'motorcat2a','motorcat2b', 'motorcat2c', 'motorcat2d', 'allhumancat2a', 'allhumancat2b','allhumancat2c', 'allhumancat2d')
 
+# select a couple of simple covariates to work with
 elk_cov <- sel_cov %>%
   dplyr::select('elev', 'slope', 'cuts100', 'pplcat3a',  'lure', 'camera') %>%
   mutate_if(is.numeric, scale)
+# this actually isn't used later
 ```
 
 ###  Prep EH and unmarked data object
 
-Convert to 7-day intervals
+Convert our daily y data to 7-day intervals
 
 ```{r}
 #str(ydata) ## Note there are both NAs and 0s
+# convert is in occupancy package
 ydata7 <- convert(ydata, 7)
 ydata7 <- count2occu(ydata7) # makes sure occupancy data, not count
 
@@ -220,14 +311,14 @@ ydata7 <- count2occu(ydata7) # makes sure occupancy data, not count
 umf <- unmarkedFrameOccu(y = ydata7[,-1], siteCovs = sel_cov) 
 summary(umf)
 
-
-
-summary(umf)
+# max number of observations per site: 26 means that the max was 26 7-day periods with 1s
+# tabulation of y observations tells us we're missing a lot of data
 ```
 
 ### Run models p
 
 ```{r}
+# fit univariate models to look at effects on p
 fm_p1 <- occu(~1 ~1, data=umf)
 #summary(fm_p1)
 fm_p2 <- occu(~d2road ~1, data=umf)
@@ -251,26 +342,50 @@ fm_p17 <- occu(~allhumancat2a ~1, data=umf)
 ### Model selection Det Prob  
 
 ```{r}
+# the notation of psi(.)p(.) comes from mark recapture, the dot just means it's constant (no)
 fms.all.p <- fitList(fits=list('psi(.)p(.)'=fm_p1, 'psi(.)p(d2road)'=fm_p2,'psi(.)p(tpi20)'=fm_p3,'psi(.)p(tpi100)'=fm_p4,'psi(.)p(tpi500)'=fm_p5,'psi(.)p(cc500.s)'=fm_p6,'psi(.)p(cc100)'=fm_p7,'psi(.)p(lure)'=fm_p8,'psi(.)p(protected3)'=fm_p9,'psi(.)p(camera)'=fm_p10,'psi(.)p(pplcat3a)'=fm_p11,'psi(.)p(motorcat3a)'=fm_p12,'psi(.)p(motorcat5)'=fm_p13,'psi(.)p(allhumancat5)'=fm_p14,'psi(.)p(pplcat2a)'=fm_p15,'psi(.)p(motorcat2a)'=fm_p16,'psi(.)p(allhumancat2a)'=fm_p17))
 
 modSel(fms.all.p)
+
+# we see that the top model in the detection process is protected status, followed by topographic position index, then camera type, lure
+# think about what constitutes a detection covariate
+# remember that p and psi are correlated
 ```
 
 Wow, so protected areas with 2 categories seems to be the top.
 
 ```{r}
 summary(fm_p9)
+naive_occu <- 250/698
+
+# from output of the summary of the model
+occupancy <- plotigs(-0.363) 
+base_detectionProb <- plogis(-2.040)
+
+
 ```
 
-Top model:
+*In here, do a bunch of model selection:*
+- screen for colinearity 
+- come up with top detection model 
+
+- could dredge occupacy 
+
+
+Top model (detection probability):
 
 ```{r}
 top_p=occu(~protected3 + pplcat5 + tpi20 + camera +cc100~1, data=umf)
 summary(top_p)
+
+# baseline detection probability for intercepts is 0.121
+plogis(-1.98)
 ```
 
 
 ### Run models psi/p
+
+These are univariate model comparison/selection 
 
 ```{r}
 fm1=occu(~protected3 + pplcat5 + tpi20 + camera +cc100~1, data=umf)
@@ -278,7 +393,7 @@ fm2=occu(~protected3 + pplcat5 + tpi20 + camera +cc100~northness, data=umf)
 fm3=occu(~protected3 + pplcat5 + tpi20 + camera +cc100~eastness, data=umf)
 fm4=occu(~protected3 + pplcat5 + tpi20 + camera +cc100~slope, data=umf)
 fm5=occu(~protected3 + pplcat5 + tpi20 + camera +cc100~elev, data=umf)
-fm6=occu(~protected3 + pplcat5 + tpi20 + camera +cc100~elev +elev2, data=umf)
+fm6=occu(~protected3 + pplcat5 + tpi20 + camera +cc100~elev +elev2, data=umf) # quadratic 
 fm7=occu(~protected3 + pplcat5 + tpi20 + camera +cc100~d2road, data=umf)
 fm8=occu(~protected3 + pplcat5 + tpi20 + camera +cc100~tpi20, data=umf)
 fm9=occu(~protected3 + pplcat5 + tpi20 + camera +cc100~tpi100, data=umf)
@@ -336,6 +451,8 @@ top_fm
 
 Obtaining Confidence Intervals by Likelihood Profile - takes time. 
 
+Occupancy gives us standard error, which on untransformed logit transformation isn't useful 
+
 ```{r}
 ## Detection Covariates
 confint(top_fm, type="det", method = "profile") # to get CI around any beta coeff
@@ -343,27 +460,37 @@ confint(top_fm, type="det", method = "profile") # to get CI around any beta coef
 confint(top_fm, type="state", method = "profile") # to get CI around any beta coeff
 ```
 
-### Evaluating model fit 
+### Evaluating model fit
+
+Use the parboot method for an intername model goodness of fit test
 
 ```{r}
 (system.time(pb <- parboot(top_fm, statistic=chisq, nsim=100, report=10))) # if p>0.05, fail to reject null, and model fit is good
-pb # p=
+pb # p= is the probability that our model is wrong
+# probability of the t statistic being greater than a null model 
 plot(pb)
 ```
 
 
 ### Best estimate of which site are occupied
 
+We want to make predictions for each camera location whether elk were there or not based on our model 
+
 ```{r}
 ?ranef
 
 ELKranef = ranef(top_fm)
+# using bayes rules - these occupancy models bridge the gap between frequentist and bayesian - looking for occupancy conditioned on detection probability 
 str(ELKranef)
+# posterior occupancy probabioity at site 1 (0.934),2 (0.935), 3 (0) etc
 hist(ELKranef@post)
 head(ELKranef@post)
+# the locations (rows) that had an elk will have a 1, this is only predicting the occupancy for sites with all zeros 
 
+# create a new dataframe with predicted site occupancy 
 summary.y2=as.data.frame(t(apply(ydata7[,-1],1,na01.fnc)))
 ELKoccu=cbind(data.frame(location=ydata7$location, easting=covar$easting, northing=covar$northing), summary.y2, data.frame(ELKpsi=ELKranef@post[,2,], ranefmode=bup(ELKranef , stat="mode"), ranefmean=bup(ELKranef , stat="mean")))
+head(ELKoccu)
 sum(ELKoccu$psinaive) # 250/698 = 
 sum(ELKoccu$ranefmode) # 255/698 = 
 sum(ELKoccu$ranefmean) # 276.6746/698 = 
@@ -383,6 +510,7 @@ Plot Estimated Occupancy:
 ggplot(ELKoccu, aes(easting, northing, colour =ELKpsi, size = ELKpsi)) + geom_point()
 
 ggplot(ELKoccu, aes(easting, northing, colour =ELKpsi, size = as.factor(psinaive))) + geom_point()
+# best goodness of fit test - look at where your model tells you that you're missing detections
 ```
 
 ### Obtaining Confidence Interval on Estimated number of sites occupied 
@@ -391,14 +519,17 @@ From Kery/Royle workshop 9...doc FINITE SAMPLE OCCUPANCY
 Nocc function now in source.r
 
 ```{r}
+# Nocc came from Kerry Royle workshop
 estimate.of.Nocc <- Nocc(top_fm)
-estimate.of.Nocc #same as sum(ranefmean)
+estimate.of.Nocc #same as sum(ranefmean) but Nocc is one number while sum(ranefmean) is many numbers
 system.time(pb.N <- parboot(top_fm, Nocc, nsim=100, report=10))   
-# 100 Takes less  time (7min for 1000)
+# 100 Takes less  time (7min for 1000) - in reality you would do more like 1000
 plot(pb.N)
 abline(v=250, col="red")
+# get 95% confidence interval 
 summary(pb.N@t.star) #again same as sum(ranefmean)
 quantile(pb.N@t.star, prob = c(0.025, 0.975)) #435.5439 494.5864
+## these numbers more look like 255.325 and 304.67
 ```
 
 ### Prediction with Occupancy Model
@@ -433,7 +564,9 @@ hist(data$Count3)
 Detection data rows are sites columns are detection replicates, which focus only on occupancy 1, 0 in the R-N model
 
 ```{r}
+# extract out y dat - counts
 y<-data[,2:4]
+# get the number of rows
 n<-nrow(data)
 #site level (individual) covariates
 blgr.site<-data[,5:9]
@@ -444,6 +577,7 @@ Create time factor and use as covariate.
 Observation level (time specific) covariates:
 
 ```{r}
+# cretae a time factor 
 time<-as.factor(rep(c(1,2,3),n))
 blgr.obs<-data.frame(time)
 ```
@@ -451,6 +585,7 @@ blgr.obs<-data.frame(time)
 Put everything together in unmarked data frame. Note that covariate can come from separate files
 
 ```{r}
+# site detection covariates don't vary over time??
 blgr <- unmarkedFrameOccu(y = y, siteCovs = blgr.site,obsCovs=blgr.obs)
 #summary of unmarked data frame
 summary(blgr)
@@ -467,8 +602,12 @@ Fit the occupancy model of Royle and Nichols (2003), which relates probability o
 
 ```{r}
 ?occuRN
+# fit a model: ~p and ~abundance 
+# K is upper summation index - have to set a maximum number of detections - set way bigger than what you would ever see 
 rn1<-occuRN(~1 ~1,blgr, K=150)
 summary(rn1)
+detection_probability_percent <- plogis(-1.27)
+avg_abund <- exp(1.12)
 ```
 
 
@@ -487,10 +626,13 @@ So the raw P is 0.22, the estimated N per site is 3.05, and there are 41 sites, 
 ```{r}
 re <- ranef(rn1)
 plot(re)
+# this gives you the expected abundance distribution at each site 
 ebup <- bup(re, stat="mean")
 rn1EBUP <- sum(ebup)
 rn1_CI <- confint(re,level=0.95)
 rn1_CI
+# estimate avg number of indiv at each site 1:10:00
+
 ```
 
 Create some more occupancy models
@@ -499,16 +641,18 @@ Time specific detection, constant occupancy:
 ```{r}
 #time specific detection, constant occupancy 
 rn2<-occuRN(~time ~1,blgr)
+# by adding in a temporal covariate, we bring abundance estimates down 
 backTransform(rn2,"state")
 ```
 
-Constant detection, abundance predicted by bqi:
+Constant detection, abundance predicted by bqi: (unk what this covariate is)
 
 ```{r}
 rn3<-occuRN(~1 ~BQI.1.yes,blgr)
 summary(rn3)
 backTransform(linearComb(rn3, c(1, 0), type="state"))
 backTransform(linearComb(rn3, c(0, 1), type="state"))
+# if you're in a yes site, the abundance estimate is reduced by 0.759
 predict(rn3, type ="state")
 ```
 Note the additive linear terms.
@@ -536,7 +680,7 @@ modelsAIC <- c(rn1AIC, rn2AIC, rn3AIC, rn4AIC, rn5AIC)
 modelsAIC
 ```
 
-The fact that `rn1` is the best is uninformative. Let's do something with model rn3
+The fact that `rn1` is the best is uninformative (this is the constant model). Let's do something with model rn3
 
 ```{r}
 predict(rn3, type ="state")
@@ -552,6 +696,8 @@ plot(re5)
 ### COUNT MODELS N-Mixture Models, e.g., Point Counts
 
 J. A Royle. N-mixture models for estimating population size from spatially replicated counts. Biometrics , 60(1):108-115, 2004
+
+Comes with a lot of assumptions
 
 ```{r}
 data2<-read.csv("Data/blgr.csv")
@@ -584,7 +730,7 @@ Observation level (time specific) covariates:
 blgr_count.obs<-data.frame(time)
 ```
 
-Put everything together in unmarked data frame. Note that covariate can come from separate files
+Put everything together in unmarked data frame (PCount). Note that covariate can come from separate files
 ```{r}
 blgr_count <- unmarkedFramePCount(y = counts, siteCovs = blgr_count.site,obsCovs=blgr_count.obs)
 summary(blgr_count)
@@ -594,19 +740,28 @@ summary(blgr_count)
 Royle count model with no covariates
 
 ```{r}
+# create a pcount model
+# also have to set K - the upper limit of what we would expect
 pc1<-pcount(~1 ~1,blgr_count, K = 500)
+# can put in mixture = "p" for poisson distribution etc.
 pc1
+# p is interpreted as the probability of detectingone individual 
+detection_prob <- plogis(-3.9)
 
+# back tranform out to look at the abundance estimates
 backTransform(pc1,"state")
 backTransform(pc1,"det")
 
+# you can sum up all of the counts
 sum(counts$Count1)
+# total of 35 blue grosbeaks 
 ```
 
 ### Goodness of Fit test with AICcmodavg
 
 ```{r}
 Nmix.gof.test(pc1, nsim = 50, plot.hist = TRUE)
+# look atthe distribution to make sure that your count data is in the middle 
 ```
 
 Time specific:
