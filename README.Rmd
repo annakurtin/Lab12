@@ -42,6 +42,7 @@ Data from an audio survey of spring peepers.
 ```{r}
 # Pseudoacris crucifer
 # convert your dataframe to a UMF object for use in unmarked
+pcru_csv <- read_csv(".\\Data\\frog2001pcru.csv")
 pcru <- csvToUMF(system.file("csv", "frog2001pcru.csv", package = "unmarked"),long = TRUE, type = "unmarkedFrameOccu")
 # UMF is an unmarked dataframe object
 # pay attention to whether you're bringing it in long format or wide format, here we're specifying long data

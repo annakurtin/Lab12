@@ -1,0 +1,113 @@
+---
+title: "Final Project V1"
+author: "Anna Kurtin"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Read in data
+```{r eval=TRUE, message=FALSE, results='hide',warning=FALSE}
+packages <- c("unmarked", "reshape2", "dplyr", "ggplot2","AICcmodavg","tidyverse","lubridate")
+# unmarked is the workhorse for what we're doing now 
+package.check <- lapply(
+  packages,
+  FUN = function(x) {
+    if (!require(x, character.only = TRUE)) {
+      install.packages(x, dependencies = TRUE)
+      library(x, character.only = TRUE)
+    }
+  }
+)
+
+```
+
+
+Resources: 
+Follow this link: [unmarked](https://cran.r-project.org/web/packages/unmarked/vignettes/unmarked.html) for package vignette 
+
+Prompt:
+Create a basic occupancy model for the playback surveys using unmarked.
+Covariates: 
+- river system
+- date
+
+Start with 2022 data and if time look at a dynamic occupancy model 
+
+Breifly discuss different occupancy frameworks to pursue going forward
+
+Data loading and tidying
+
+```{r Load Data}
+# Read in 2020 Data
+umbel_20 <- read_csv("C:\\Users\\annak\\OneDrive\\Documents\\UM\\Research\\Coding_Workspace\\Cuckoo-Research\\Data\\Playback Results\\2020_BBCUPlayback_Results_UMBEL.csv")
+
+# Read in 2021 Data
+umbel_21 <- read_csv("C:\\Users\\annak\\OneDrive\\Documents\\UM\\Research\\Coding_Workspace\\Cuckoo-Research\\Data\\Playback Results\\2021_BBCUPlaybackResults_UMBEL.csv")
+
+# Read in 2022 data:
+r7_22 <- read_csv("C:\\Users\\annak\\OneDrive\\Documents\\UM\\Research\\Coding_Workspace\\Cuckoo-Research\\Data\\Playback Results\\2022_R7_PlaybackSurveyData.csv")
+r6_22 <- read_csv("C:\\Users\\annak\\OneDrive\\Documents\\UM\\Research\\Coding_Workspace\\Cuckoo-Research\\Data\\Playback Results\\2022_BBCUPlaybackSessionResults_FWPR6.csv")
+umbel_22 <- read_csv("C:\\Users\\annak\\OneDrive\\Documents\\UM\\Research\\Coding_Workspace\\Cuckoo-Research\\Data\\Playback Results\\2022MMR_CuckooPlaybackData_UMBEL.csv")
+# Region 5 - didn't get any detections on playbacks, don't have data on this
+
+dat_22 <- read_csv("C:\\Users\\annak\\OneDrive\\Documents\\UM\\Research\\Coding_Workspace\\Cuckoo-Research\\Data\\Playback Results\\2022_PlaybacksSummarized.csv")
+
+```
+
+
+```{r Tidying}
+# take the colons out of the time column
+class(dat_22$time) # this is a character
+r6 <- dat_22 %>% filter(river_system == "Missouri_lower")
+dat_rest <- dat_22 %>% filter(!river_system %in% "Missouri_lower")
+# removing the colon from the time column for R6
+# separate these by the colon and then rejoin them
+r6 <- r6 %>% separate(time, into = c("hour","min"), sep = ":")
+r6_edited <- r6 %>% unite(time,hour,min,sep = "")
+
+# add them back together
+dat22_new <- rbind(dat_rest,r6_edited)
+dat22_new$time <- as.numeric(dat22_new$time)
+#nrow(dat22_new %>% filter(bbcu==1))
+#str(dat22_new)
+
+dat_tojoin <- dat22_new %>% select(site_id,river_system,reg_dat)
+
+# Group these by site interval
+dat22_sum <- dat22_new %>% group_by(site_id,time) %>% summarize(bbcu_count=sum(bbcu),ybcu_count=sum(ybcu))
+# do a left join here by site for reg_dat and river_system
+left_join(dat22_sum,dat_tojoin,by= "site_id")
+
+# convert date column into a date format in R
+dat22_new <- dat22_new %>% mutate(new_date=as.Date(reg_dat,format="%m/%d/%Y"))
+# make a column for julian date
+#dat22_new$julian_date <- as.POSIXlt(dat22_new$new_date) 
+dat22_new$julian_date <- yday(dat22_new$new_date)
+# write this into a csv
+write.csv(dat22_new,"C:\\Users\\annak\\OneDrive\\Documents\\UM\\Research\\Coding_Workspace\\Cuckoo-Research\\Data\\Playback Results\\2022_PlaybacksForProject.csv",row.names=FALSE)
+```
+
+
+```{r}
+# put the data into the format for unmarked 
+cuckoos <- csvToUMF(system.file("csv", "2022_PlaybacksForProject.csv", package = "unmarked"),long = TRUE, type = "unmarkedFrameOccu")
+# Giving error: Error in read.table(file = file, header = header, sep = sep, quote = quote,  : 
+#  no lines available in input
+
+dat <- read.csv(system.file("csv","2022_PlaybacksForProject.csv", package="unmarked"))
+
+
+
+
+```
+
+
+```{r}
+# create model
+ex_mod_p1 <- occu(~ 1 ~ 1, data = pcru)
+
+```
