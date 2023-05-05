@@ -29,32 +29,29 @@ package.check <- lapply(
 Resources: 
 Follow this link: [unmarked](https://cran.r-project.org/web/packages/unmarked/vignettes/unmarked.html) for package vignette 
 
-Prompt:
-Create a basic occupancy model for the playback surveys using unmarked.
-Covariates: 
-- river system
-- date
+Use instruction manual
 
-Start with 2022 data and if time look at a dynamic occupancy model 
-
-Breifly discuss different occupancy frameworks to pursue going forward
 
 Data loading and tidying
 
 ```{r Load Data}
-# Read in 2020 Data
-umbel_20 <- read_csv("C:\\Users\\annak\\OneDrive\\Documents\\UM\\Research\\Coding_Workspace\\Cuckoo-Research\\Data\\Playback Results\\2020_BBCUPlayback_Results_UMBEL.csv")
+# # Read in 2020 Data
+# umbel_20 <- read_csv("C:\\Users\\annak\\OneDrive\\Documents\\UM\\Research\\Coding_Workspace\\Cuckoo-Research\\Data\\Playback Results\\2020_BBCUPlayback_Results_UMBEL.csv")
+# 
+# # Read in 2021 Data
+# umbel_21 <- read_csv("C:\\Users\\annak\\OneDrive\\Documents\\UM\\Research\\Coding_Workspace\\Cuckoo-Research\\Data\\Playback Results\\2021_BBCUPlaybackResults_UMBEL.csv")
+# 
+# # Read in 2022 data:
+# r7_22 <- read_csv("C:\\Users\\annak\\OneDrive\\Documents\\UM\\Research\\Coding_Workspace\\Cuckoo-Research\\Data\\Playback Results\\2022_R7_PlaybackSurveyData.csv")
+# r6_22 <- read_csv("C:\\Users\\annak\\OneDrive\\Documents\\UM\\Research\\Coding_Workspace\\Cuckoo-Research\\Data\\Playback Results\\2022_BBCUPlaybackSessionResults_FWPR6.csv")
+# umbel_22 <- read_csv("C:\\Users\\annak\\OneDrive\\Documents\\UM\\Research\\Coding_Workspace\\Cuckoo-Research\\Data\\Playback Results\\2022MMR_CuckooPlaybackData_UMBEL.csv")
+# # Region 5 - didn't get any detections on playbacks, don't have data on this
+# 
+# dat_22 <- read_csv(".\\Data\\2022_PlaybacksSummarized.csv")
 
-# Read in 2021 Data
-umbel_21 <- read_csv("C:\\Users\\annak\\OneDrive\\Documents\\UM\\Research\\Coding_Workspace\\Cuckoo-Research\\Data\\Playback Results\\2021_BBCUPlaybackResults_UMBEL.csv")
+bbcu_22 <- read_csv(".\\Data\\2022_PlaybacksForProject_BBCUSimple.csv")
 
-# Read in 2022 data:
-r7_22 <- read_csv("C:\\Users\\annak\\OneDrive\\Documents\\UM\\Research\\Coding_Workspace\\Cuckoo-Research\\Data\\Playback Results\\2022_R7_PlaybackSurveyData.csv")
-r6_22 <- read_csv("C:\\Users\\annak\\OneDrive\\Documents\\UM\\Research\\Coding_Workspace\\Cuckoo-Research\\Data\\Playback Results\\2022_BBCUPlaybackSessionResults_FWPR6.csv")
-umbel_22 <- read_csv("C:\\Users\\annak\\OneDrive\\Documents\\UM\\Research\\Coding_Workspace\\Cuckoo-Research\\Data\\Playback Results\\2022MMR_CuckooPlaybackData_UMBEL.csv")
-# Region 5 - didn't get any detections on playbacks, don't have data on this
-
-dat_22 <- read_csv("C:\\Users\\annak\\OneDrive\\Documents\\UM\\Research\\Coding_Workspace\\Cuckoo-Research\\Data\\Playback Results\\2022_PlaybacksSummarized.csv")
+ybcu_22 <- read_csv(".\\Data\\2022_PlaybacksForProject_YBCUSimple.csv")
 
 ```
 
@@ -88,26 +85,404 @@ dat22_new <- dat22_new %>% mutate(new_date=as.Date(reg_dat,format="%m/%d/%Y"))
 #dat22_new$julian_date <- as.POSIXlt(dat22_new$new_date) 
 dat22_new$julian_date <- yday(dat22_new$new_date)
 # write this into a csv
-write.csv(dat22_new,"C:\\Users\\annak\\OneDrive\\Documents\\UM\\Research\\Coding_Workspace\\Cuckoo-Research\\Data\\Playback Results\\2022_PlaybacksForProject.csv",row.names=FALSE)
+# write.csv(dat22_new,"C:\\Users\\annak\\OneDrive\\Documents\\UM\\Research\\Coding_Workspace\\Cuckoo-Research\\Data\\Playback Results\\2022_PlaybacksForProject.csv",row.names=FALSE)
 ```
 
-
-```{r}
+```{r Tidying Old}
 # put the data into the format for unmarked 
-cuckoos <- csvToUMF(system.file("csv", "2022_PlaybacksForProject.csv", package = "unmarked"),long = TRUE, type = "unmarkedFrameOccu")
-# Giving error: Error in read.table(file = file, header = header, sep = sep, quote = quote,  : 
-#  no lines available in input
+# bbcu <- csvToUMF(system.file("csv", "2022_PlaybacksForProject_BBCUNumericOnly.csv", package = "unmarked"),long = TRUE, type = "unmarkedFrameOccu")
 
-dat <- read.csv(system.file("csv","2022_PlaybacksForProject.csv", package="unmarked"))
+# #dat_22 <- 
+# head(read.csv(system.file("csv","2022_PlaybacksForProject_BBCUSimple.csv", package="unmarked")))
+# 
+# bbcu <- csvToUMF(".\\Data\\2022_PlaybacksForProject_BBCUNumericOnly.csv", long = TRUE, type = "unmarkedFrameOccu")
+
+#bbcu <- csvToUMF(".\\Data\\2022_PlaybacksForProject_BBCUSimple.csv", long = TRUE, type = "unmarkedFrameOccu")
+
+#ybcu <- csvToUMF(".\\Data\\2022_PlaybacksForProject_YBCUSimple.csv", long = TRUE, type = "unmarkedFrameOccu")
+```
 
 
+```{r BBCU Data Setup}
+# Read in data
+bbcu_record <- read_csv(".\\Data\\2022_PlaybacksForProject_BBCUSimple.csv")
+# for YBCU data, do a left join and fill in NA with 0
+# or copy and paste UMBEL if no detections
+#class(bbcu_record$interval)
+# clean
+# change "Pb4 to PB4"
+# change 1-5 to M1- M5
+bbcu_record <- bbcu_record %>% 
+  mutate(interval = case_when(
+  interval == "PB1" ~ "PB1",
+  interval == "PB2" ~ "PB2",
+  interval == "PB3" ~ "PB3",
+  interval == "PB4" ~ "PB4",
+  interval == "Pb4" ~ "PB4",
+  interval == "PB5" ~ "PB5",
+  interval == 1 ~ "M1",
+  interval == 2 ~ "M2",
+  interval == 3 ~ "M3",
+  interval == 4 ~ "M4",
+  interval == 5 ~ "M5",
+  interval == "M1" ~ "M1",
+  interval == "M2" ~ "M2",
+  interval == "M3" ~ "M3",
+  interval == "M4" ~ "M4",
+  interval == "M5" ~ "M5",
+))
+# unique(test_clean$interval) good
 
+
+# pivot wider by playback
+bbcu_wide <- bbcu_record %>% pivot_wider(names_from = interval, values_from = bbcu)
+
+# Check for duplicates
+# bbcu_record %>%
+#   dplyr::group_by(site_id, point_id, julian_date, river_system, time, interval) %>%
+#   dplyr::summarise(n = dplyr::n(), .groups = "drop") %>%
+#   dplyr::filter(n > 1L) 
+
+bbcu_wide$river_system <- as.factor(bbcu_wide$river_system)
+#class(bbcu_wide$M5)  why is this a list?
+#str(bbcu_wide)
+# max of playback surveys 
+# group by site and river system then mutate for observation 
+# pipe into mutate rather than su
+
+# scale the variables that need scaling
+bbcu_wide <- bbcu_wide %>%
+  mutate(julian_date=c(scale(julian_date)),time=c(scale(time)))
+# why does this put a [,1] now? becuase scale() function returns a matrix
+# class(bbcu_wide$julian_date) numeric
+
+bbcu_wide <- as.data.frame(bbcu_wide)
+
+# now summarize the data across sites 
+# bbcu_summed <- bbcu_wide %>% 
+#   group_by(site_id,river_system) %>% 
+#   summarize(M1=max(M1,na.rm=TRUE),
+#             M2=max(M2),
+#             M3=max(M3),
+#             M4=max(M4),
+#             M5=max(M5),
+#             PB1=max(PB1),
+#             PB2=max(PB2),
+#             PB3=max(PB3),
+#             PB4=max(PB4),
+#             PB5=max(PB5),
+#             julian_date=min(julian_date),
+#             time=min(time)) %>% 
+#   mutate(river_system=river_system) %>% ungroup()
+
+# redoing this - since each individual playback is sequential, we need to group them up 
+bbcu_summed <- bbcu_wide %>% 
+  group_by(site_id,river_system) %>% 
+  summarize(passive=max(c(M1,M2,M3,M4,M5)),
+            playback=max(c(PB1,PB2,PB3,PB4,PB5)),
+            julian_date=min(julian_date),
+            time=min(time)) %>%
+  mutate(river_system=river_system) %>% ungroup()
+
+# since I'm counting the passive point count and the playback survey as repeat, independent visits, how does this impact my assumptions?
+
+
+# This is good to go! now combine it with the site covariates into an unmarked dataframe
+# pull out only the playback data 
+bbcu_detections <- bbcu_summed %>% select(passive,playback)
+
+# site covariates
+occ_cov <- bbcu_summed %>% select(river_system, julian_date, time) 
+
+# not doing visit covariates becuase you need one of these for each site for each visit. 
+
+# format as an unmarked dataframe
+# don't include site id
+umf_bbcu <- unmarkedFrameOccu(
+  y = bbcu_detections,
+  siteCovs = occ_cov
+  )
+
+# how many sites?
+length(bbcu_summed$site_id) # 36 sites
+```
+
+Prompt:
+Create a basic occupancy model for the playback surveys using unmarked.
+Site covariates: 
+- river system
+- date
+
+Detection covariates:
+- time
+
+Show that I am on the super low end of this graph - hard to see any effect 
+
+Start with 2022 data and if time look at a dynamic occupancy model 
+
+Breifly discuss different occupancy frameworks to pursue going forward
+
+```{r BBCU Naive Model}
+# create model
+# constant detection probability, constant occupancy
+# this is where you put covariates into each ~ to specify detection probability (first) and site occupancy (second) 
+# totally naive model
+bbcu_m1 <- occu(~ 1 ~ 1, data = umf_bbcu)
+occ1 <- plogis(-1.56) # .17, so 17% occupancy
+# how many sites do we estimate were occupied?
+occ_sites1 <- 36 * occ1 # 6 sites
+# how many unoccupied?
+36-occ_sites1 # 30
+
+# what about our detection probability?
+plogis(-0.405) # 0.40, so 40% detection
+# AIC: 37.77
+
+# how do you estimate model fit? ??????????????????????????????????????
 
 ```
 
 
-```{r}
-# create model
-ex_mod_p1 <- occu(~ 1 ~ 1, data = pcru)
+# Incorproating variables
 
+Variables to look at:
+
+How psi varies with:
+- River system
+- Julian date
+
+How detection varies with 
+- time
+- interval (do I need to edit the data since FWP and UMBEL did these in different ways?)
+Could I estimate detection probability to multiple playbacks at different locations within each site? Just see what this looks like?
+
+
+## BBCU Single-season, single-species occupancy model
+
+```{r BBCU Covariate Model}
+# new model with covariates 
+bbcu_m2 <- occu(~ time ~ river_system + julian_date, data = umf_bbcu)
+# bbcu_m3 <- occu(~ time ~ (1+river_system) + julian_date, data = umf_bbcu)
+# cant have fixed and random effect in the same model 
+# can't include random effects in unmarked
+
+# interpreting: only plogis the intercept
+
+# intercept: a playback survey on the lower Missouri river on the average Julian date
+mean(bbcu_record$julian_date) # this is date 180 - June 29th 
+sd(bbcu_record$julian_date) # standard deviation is 8 days, so this is either 8 days earlier (June 21st) or 8 days later (July 7th)
+# the occupancy probability for a site on the lower Missouri river on the average Julian date
+plogis(0.279) # 56.93%
+# the occupancy probability for a site on the upper Missouri river on the average Julian date
+plogis(-2.029) # 11.62% 
+# the occupancy probability for a site on the Yellowstone river on the average Julian date
+plogis(-2.299) # 9.12%
+# the occupancy probability for a site on the lower Missouri river as the Julian date increases by one standard deviation? 
+plogis(-0.136) # 46.6%
+
+# talk about relative effects of coefficients
+# p values are not significant for each
+# river system has a strong but non significatn effect 
+# reasoning for doing bayesian - since species has low detection and low occupancy 
+# negative binomial - with lots of zeros 
+
+# Detection probability 
+plogis(-0.517) #37.3
+# since detection probaility is inflated, occupancy is inflated (do the logic on this math)
+
+# Start here: look through the notes to check when you interpret it
+
+# there are to few detections to be able to detect a significant effect when there is one (low power)
+
+# assumption of independence is violated 
+
+# could add a new column for year and include it in the model 
+# if you model years separately you can't compare the covariates
+## could do the 2021 data and just see if this is enough data
+
+# talk about issues with using playback surveys for occupancy
+## violates homogeneity of detection - but this is the same as for point counts
+## violates no unmodeled homogeneity - talk abut what site variables I'm going ot collect 
+## random effects for river system - use this as a varying intercept in the occupancy model 
+
+
+
+# AIC is 43.92
+# this could be because AIC penalizes models that have more covariates that don't explain more of the variation
+# we don't have information on covariates that have a stronger effect on detection probability ex. veg density, wind, etc.
+```
+
+
+```{r YBCU Data}
+# need to summarize these by site ??
+ybcu_record <- read_csv(".\\Data\\2022_PlaybacksForProject_YBCUSimple.csv")
+
+# clean
+# change "Pb4 to PB4"
+# change 1-5 to M1- M5
+ybcu_record <- ybcu_record %>% 
+  mutate(interval = case_when(
+  interval == "PB1" ~ "PB1",
+  interval == "PB2" ~ "PB2",
+  interval == "PB3" ~ "PB3",
+  interval == "PB4" ~ "PB4",
+  interval == "Pb4" ~ "PB4",
+  interval == "PB5" ~ "PB5",
+  interval == 1 ~ "M1",
+  interval == 2 ~ "M2",
+  interval == 3 ~ "M3",
+  interval == 4 ~ "M4",
+  interval == 5 ~ "M5",
+  interval == "M1" ~ "M1",
+  interval == "M2" ~ "M2",
+  interval == "M3" ~ "M3",
+  interval == "M4" ~ "M4",
+  interval == "M5" ~ "M5",
+))
+# unique(ybcu_record$interval) # good
+
+# # need to summarize time
+# ybcu_record %>% group_by(site_id) %>% summarize(time=min(time)) %>% mutate(river_system=river_system, interval=interval, ybcu=ybcu, julian_date=julian_date)
+
+
+# pivot wider by playback
+ybcu_wide <- ybcu_record %>% pivot_wider(names_from = interval, values_from = ybcu)
+# why isn't this displaying properly?
+
+# Check for duplicates
+# ybcu_record %>%
+#   dplyr::group_by(site_id, point_id, julian_date, river_system, time, interval) %>%
+#   dplyr::summarise(n = dplyr::n(), .groups = "drop") %>%
+#   dplyr::filter(n > 1L) 
+
+ybcu_wide$river_system <- as.factor(ybcu_wide$river_system)
+#class(bbcu_wide$M5)  why is this a list?
+#str(bbcu_wide)
+# max of playback surveys 
+# group by site and river system then mutate for observation 
+# pipe into mutate rather than su
+
+# scale the variables that need scaling
+ybcu_wide <- ybcu_wide %>%
+  mutate(julian_date=c(scale(julian_date)),time=c(scale(time)))
+# why does this put a [,1] now? becuase scale() function returns a matrix
+# class(bbcu_wide$julian_date) numeric
+
+ybcu_wide <- as.data.frame(ybcu_wide)
+
+# summarize data across all sites - since each individual playback is sequential, we need to group them up 
+ybcu_summed <- ybcu_wide %>% 
+  group_by(site_id,river_system) %>% 
+  summarize(passive=max(c(M1,M2,M3,M4,M5),na.rm = TRUE),
+            playback=max(c(PB1,PB2,PB3,PB4,PB5), na.rm = TRUE),
+            julian_date=min(julian_date),
+            time=min(time)) %>%
+  mutate(river_system=river_system) %>% ungroup()
+
+# since I'm counting the passive point count and the playback survey as repeat, independent visits, how does this impact my assumptions?
+
+
+# This is good to go! now combine it with the site covariates into an unmarked dataframe
+# pull out only the playback data 
+ybcu_detections <- ybcu_summed %>% select(passive,playback)
+
+# site covariates
+occ_cov2 <- ybcu_summed %>% select(river_system, julian_date, time) 
+
+# format as an unmarked dataframe
+# don't include site id
+umf_ybcu <- unmarkedFrameOccu(
+  y = ybcu_detections,
+  siteCovs = occ_cov2
+  )
+
+```
+
+## YBCU Single-season, single-species occupancy model
+
+```{r YBCU Naive Model}
+# totally naive model
+ybcu_m1 <- occu(~ 1 ~ 1, data = umf_ybcu)
+# warning message: model did not converge
+occ1 <- plogis(-1.56) # .17, so 17% occupancy
+# how many sites do we estimate were occupied?
+occ_sites1 <- 36 * occ1 # 6 sites
+# how many unoccupied?
+36-occ_sites1 # 30
+
+# what about our detection probability?
+plogis(-0.405) # 0.40, so 40% detection
+# AIC: 37.77
+
+```
+
+Model did not converge, meaning that there isn't enough data to fit the model.
+
+
+# Issues with my current playback data
+
+- no repeat playback surveys - difficult to estimate detection probability
+- difficult to fit these models in unmarked - requires two columns, so I have to fill in some data
+- no significant effects - low power 
+
+
+If we handled this in a bayesian framework, we could get better inference even if the model wasn't fit
+
+
+```{r YBCU Covariate Model}
+# new model with covariates 
+ybcu_m2 <- occu(~ time ~ river_system + julian_date, data = umf_ybcu)
+
+# Warning message:
+# Hessian is singular (behind the scenes calculus). Try providing starting values or using fewer covariates
+# means that the output of this model is useless
+
+# intercept: a playback survey on the lower Missouri river on the average Julian date
+
+```
+
+
+```{r Snippings}
+# test_clean <- bbcu_record %>% 
+#   mutate(interval = ifelse(interval=="Pb4", "PB4",interval))
+# clean up entry of times
+## group by site_id, point_id, then make the time for the interval all be the first time stamp
+# bbcu_record %>% group_by()
+# 
+# clean_fwp <- function(playback_dat){
+#   for (site in site_id){
+#     print(site)
+#     for (point in point_id){
+#       print(point)
+#         if (river_system != Missouri_upper){
+#           print("yes")
+#           
+#         }
+#     }
+#   }
+# 
+# }
+
+# obs covs - don't include observation covariates 
+#p_cov <- bbcu_wide %>% select(time)
+#p_again <- bbcu_record %>% select(site_id,interval,time)
+
+# length(unique(bbcu_detections$site_id)) # 36
+# # then obsNum should be 
+# ncol(bbcu_detections) - 2 # 10
+# # so the rows of obs cov should be 360
+# nrow(p_cov)
+# 
+# nrow(bbcu_detections)
+# nrow(p_cov)
+
+
+# fit BBCU univariate models 
+mod1 <- occu(~ 1 ~ river_system, data = umf_bbcu)
+# Estimate for occupancy on the lower Missouri river (UMBEL)
+plogis(0.0832) # 52% occupancy
+# Estimate for occupancy on the upper Missouri river (r6)
+plogis(-1.5741) # 17.1%
+# Estimate for occupancy on the yellowstone
+plogis(-2.3069) # 9%
 ```
